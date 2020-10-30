@@ -54,3 +54,7 @@ function ChainRulesCore.rrule(::typeof(*),a::Number,b::AbstractTensorMap)
     end
     return a*b,pullback
 end
+
+function ChainRulesCore.rrule(::typeof(isomorphism),args...)
+    isomorphism(args...),x->(DoesNotExist(),[DoesNotExist() for a in args]...)
+end

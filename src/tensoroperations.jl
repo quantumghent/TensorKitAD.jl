@@ -8,7 +8,7 @@ end
 
 function ChainRulesCore.rrule(::typeof(TensorOperations.scalar),arg)
     function pullback(v)
-        NO_FIELDS,arg/norm(arg) #will fail for norm(arg)==0
+        NO_FIELDS,fill!(similar(arg), one(eltype(arg))) #will fail for norm(arg)==0
     end
     TensorOperations.scalar(arg),pullback
 end

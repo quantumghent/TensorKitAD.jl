@@ -1,0 +1,10 @@
+name = "TensorKitAD"
+uuid = "eda3f616-0809-42bc-8d6d-52d8f639ba44"
+authors = ["maarten <maarten.vandamme@ugent.be>"]
+version = "0.1.0"
+
+[deps]
+ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+TensorKit = "07d1fe3e-3e46-537d-9eac-e9e13d0d4cec"
+TensorOperations = "6aa20fa7-93e2-5fca-9bc0-fbd0db3c71a2"
+TupleTools = "9d95972d-f1c8-5527-a6e0-b4b365fa01f6"

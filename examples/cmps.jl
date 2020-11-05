@@ -2,6 +2,15 @@ using Zygote #the autodiff engine
 using TensorKit, TensorKitAD
 using KrylovKit, LinearAlgebra
 
+#----
+using ChainRulesCore;
+function ChainRulesCore.rrule(::typeof(sortperm),tosort;kwargs...)
+    sortperm(tosort;kwargs...),x -> (NO_FIELDS,DoesNotExist)
+end
+function ChainRulesCore.rrule(::typeof(diagm), x::AbstractVector) #yet to be merged in ChainRules
+    return diagm(x), v->(NO_FIELDS,diag(v))
+end
+#----
 
 D = 4
 K0 = Matrix{Float64}(I, D, D);
@@ -20,7 +29,8 @@ function cMPSEnergy(tup)
     order = sortperm(real(Dr),rev=true);
     Dr = Dr[order];
     Vr = Vr[:,order];
-    r = diagm(0 => Dr);
+
+    r = diagm(Dr);
     K = Vr'*K*Vr;
     R = Vr'*R*Vr;
 

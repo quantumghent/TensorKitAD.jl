@@ -1,5 +1,5 @@
 module TensorKitAD
-    using TensorKit, TensorOperations, ChainRulesCore, TupleTools, KrylovKit
+    using TensorKit, TensorOperations, ChainRulesCore, TupleTools, KrylovKit, LinearAlgebra
 
     include("tensorkit.jl")
     include("tensoroperations.jl")

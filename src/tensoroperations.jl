@@ -22,7 +22,7 @@ function ChainRulesCore.rrule(::typeof(TensorOperations.contract!),α,A,CA,B,CB,
     function pullback(v)
 
         dα = @thunk begin
-            t = res-beta*orig_C
+            t = res-β*orig_C
             if α != zero(α)
                 t/=α
             end

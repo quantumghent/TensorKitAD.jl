@@ -16,13 +16,13 @@ function ChainRulesCore.rrule(::typeof(KrylovKit.svdsolve), A::AbstractMatrix, h
         #in that case: convert nothing to zeros
         if eltype(dU) isa Union #Union{Nothing,Array{Float64,1}}
             dU = [dU[i] == nothing ? zeros(T,size(U,2)) : dU[i] for i in 1:size(U,1)]
-            dU = hcat(dU...)
         end
+        dU = hcat(dU...)
 
         if eltype(dV) isa Union #Union{Nothing,Array{Float64,1}}
             dV = [dV[i] == nothing ? zeros(T,size(V,2)) : dV[i] for i in 1:size(V,1)]
-            dV = hcat(dV...)
         end
+        dV = hcat(dV...)
 
         #placeholder for derivative
         dA = nothing

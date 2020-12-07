@@ -8,7 +8,7 @@ end
 
 function ChainRulesCore.rrule(::typeof(TensorOperations.scalar),arg)
     function pullback(v)
-        NO_FIELDS,fill!(similar(arg), one(eltype(arg))) #will fail for norm(arg)==0
+        NO_FIELDS,fill!(similar(arg), v)
     end
     TensorOperations.scalar(arg),pullback
 end
@@ -16,13 +16,11 @@ end
 function ChainRulesCore.rrule(::typeof(TensorOperations.contract!),α,A,CA,B,CB,β,C,oindA,cindA,oindB,cindB,leftind,rightind,syms=nothing)
     _flipconj(s::Symbol) = s == :C ? :N : :C;
 
-    orig_C = copy(C);
-    res = TensorOperations.contract!(α,A,CA,B,CB,β,C,oindA,cindA,oindB,cindB,leftind,rightind,syms);
+    res = TensorOperations.contract!(α,A,CA,B,CB,β,copy(C),oindA,cindA,oindB,cindB,leftind,rightind,syms);
 
     function pullback(v)
-
         dα = @thunk begin
-            t = res-β*orig_C
+            t = res-β*C
             if α != zero(α)
                 t/=α
             end
@@ -67,8 +65,13 @@ function ChainRulesCore.rrule(::typeof(TensorOperations.contract!),α,A,CA,B,CB,
         end
 
         dCB = DoesNotExist()
-        dβ= @thunk(dot(orig_C,v))
-        dC = @thunk(β'*v)
+        dβ= @thunk begin
+            dot(C,v)
+        end
+        dC = @thunk begin
+            β'*v
+        end
+
         doindA = DoesNotExist()
         dcindA = DoesNotExist()
         doindB = DoesNotExist()
@@ -79,17 +82,16 @@ function ChainRulesCore.rrule(::typeof(TensorOperations.contract!),α,A,CA,B,CB,
 
         return NO_FIELDS,dα,dA,dCA,dB,dCB,dβ,dC,doindA,dcindA,doindB,dcindB,dleftind,drightind,dsyms
     end
+
     res,pullback
 end
 
 function ChainRulesCore.rrule(::typeof(TensorOperations.add!),α,A,CA,β,C,leftind,rightind)
-    orig_C = copy(C);
-    res = TensorOperations.add!(α,A,CA,β,C,leftind,rightind);
+    res = TensorOperations.add!(α,A,CA,β,copy(C),leftind,rightind);
 
     function pullback(v)
-
         dα = @thunk begin
-            t = res - β*orig_C
+            t = res - β*C
             if α != zero(α)
                 t/=α
             end
@@ -103,7 +105,7 @@ function ChainRulesCore.rrule(::typeof(TensorOperations.add!),α,A,CA,β,C,lefti
 
         dCA = DoesNotExist()
 
-        dβ = @thunk(dot(orig_C,v))
+        dβ = @thunk(dot(C,v))
 
         dC = @thunk(β'*v)
         dleftind = DoesNotExist()
@@ -113,9 +115,11 @@ function ChainRulesCore.rrule(::typeof(TensorOperations.add!),α,A,CA,β,C,lefti
     end
     res,pullback
 end
+
 #=
-to do trace! properly I guess I'd need isomorphism to be generically defined for matrices?
+#to do trace! properly I guess I'd need isomorphism to be generically defined for matrices?
 function ChainRulesCore.rrule(::typeof(TensorOperations.trace!),α,A,CA,β,C,leftind,rightind,cind1,cind2)
+    @show "getting traced"
     _flipconj(s::Symbol) = s == :C ? :N : :C;
 
     orig_C = copy(C);

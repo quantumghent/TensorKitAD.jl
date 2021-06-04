@@ -1,4 +1,4 @@
-using Zygote,TensorKit,TensorKitAD
+using Zygote,TensorKit,TensorKitAD,MPSKit
 
 let
     #create some random mps
@@ -11,14 +11,16 @@ let
     @tensor ham[-1 -2;-3 -4]:=sz[-1 -2]*sz[-3 -4]+0.5*sx[-1 -2]*one(sx)[-3 -4]+0.5*one(sx)[-1 -2]*sx[-3 -4];
 
     function calculate_energy(state)
+
         l = isomorphism(Matrix{ComplexF64},space(state[1],1),space(state[1],1))
         r = isomorphism(Matrix{ComplexF64},space(state[end],3),space(state[end],3))
+
         @tensor lh[-1;-2]:=l[1,2]*state[1][2,3,-2]*conj(state[1][1,3,-1])
         lh*=0;
 
         for i in 2:length(state)
             @tensor lh[-1;-2]:=lh[1,2]*state[i][2,3,-2]*conj(state[i][1,3,-1])
-            @tensor lh[-1;-2]+=l[1,2]*state[i-1][2,3,4]*state[i][4,5,-2]*ham[6,3,7,5]*conj(state[i-1][1,6,8])*conj(state[i][8,7,-1])
+            @tensor lh[-1;-2]:= lh[-1;-2] + l[1,2]*state[i-1][2,3,4]*state[i][4,5,-2]*ham[6,3,7,5]*conj(state[i-1][1,6,8])*conj(state[i][8,7,-1])
 
             @tensor l[-1;-2]:=l[1;2]*state[i-1][2,3,-2]*conj(state[i-1][1,3,-1])
         end
@@ -30,7 +32,7 @@ let
     end
 
     for step in 1:1000
-        tensors = tensors - 0.1*calculate_energy'(tensors)
+        tensors = tensors - 0.01*calculate_energy'(tensors)
         normalize!.(tensors)
         @show calculate_energy(tensors)
     end

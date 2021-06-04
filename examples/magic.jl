@@ -8,13 +8,11 @@ a = TensorMap(rand,ComplexF64,ℂ^2*ℂ^5,ℂ^3);
 ad = convert(Array,a);
 
 function tfun1(x)
-    @tensor res[-1,-2]:=x[-1,2,1]*conj(x[-2,2,1])
-    norm(res)
+    res = real(@tensor x[1,2,3]*conj(x[1,2,3]))
 end
 
 function tfun2(x)
-    @ein res[-1,-2]:=x[-1,2,1]*conj(x)[-2,2,1]
-    norm(res)
+    res = real(sum(@ein t[] :=  x[1,2,3]*conj(x)[1,2,3]))
 end
 
 d1 = tfun1'(a)

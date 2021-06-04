@@ -55,7 +55,7 @@ function ChainRulesCore.rrule(::typeof(KrylovKit.svdsolve), A::AbstractMatrix, h
             dA == nothing ? dA = Ad : dA += Ad
         end
 
-        return NO_FIELDS, dA, DoesNotExist(), DoesNotExist(), DoesNotExist(), [DoesNotExist() for kwa in kwargs]...
+        return NO_FIELDS, dA, NoTangent(), NoTangent(), NoTangent(), [NoTangent() for kwa in kwargs]...
     end
     return res, pullback
 end

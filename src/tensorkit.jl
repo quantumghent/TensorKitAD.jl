@@ -59,17 +59,74 @@ function ChainRulesCore.rrule(::typeof(isomorphism),args...)
     isomorphism(args...),x->(NoTangent(),[NoTangent() for a in args]...)
 end
 
-#we assume
+#you cannot really define the pullback wrt a function, because you don't have an inner product
 function ChainRulesCore.rrule(::Type{<:TensorMap},f::Function,args...)
     function pullback(tm)
-        if f in (ones,rand,randn,zeros,LinearAlgebra.I)
-            ∂f = NoTangent()
-        else
-            throw(ArgumentError("derivative wrt to $(f) not implemented"))
-        end
-
+        ∂f = NoTangent()
         (NoTangent(),∂f,[NoTangent() for a in args]...)
     end
 
     TensorMap(f,args...),pullback
+end
+
+function ChainRulesCore.rrule(::Type{<:TensorMap},d::DenseArray,args...)
+    function pullback(tm)
+        ∂d = @thunk(convert(Array,tm))
+        (NoTangent(),∂d,[NoTangent() for a in args]...)
+    end
+    TensorMap(d,args...),pullback
+end
+
+#pullback rule based on tom's krylovkit rule
+function ChainRulesCore.rrule(::typeof(TensorKit.tsvd), t::AbstractTensorMap;kwargs...)
+    T = eltype(t);
+
+    (U,S,V) = tsvd(t;kwargs...);
+
+    F = similar(S);
+    for (k,dst) in blocks(F)
+
+        src = blocks(S)[k]
+
+        @inbounds for i in 1:size(dst,1),j in 1:size(dst,2)
+            dst[i,j] = (i == j) ? zero(eltype(S)) : 1/(src[j,j]^2-src[i,i]^2+1e-7)
+        end
+    end
+
+
+    function pullback(v)
+        dU,dS,dV = v
+
+        dA = zero(t);
+        #A_s bar term
+        if dS != ChainRulesCore.Zero()
+            dA += U*dS*V
+        end
+        #A_uo bar term
+        if dU != ChainRulesCore.Zero()
+            J = _elementwise_mult(F,(U'*dU))
+            dA += U*(J+J')*S*V
+        end
+        #A_vo bar term
+        if dV != ChainRulesCore.Zero()
+            K = _elementwise_mult(F ,V*dV')
+            dA += U*S*(K+K')*V
+        end
+        #A_d bar term, only relevant if matrix is complex
+        if dV != ChainRulesCore.Zero() && T <: Complex
+            L = Diagonal(VpdV)
+            dA += U*inv(S)*(L' - L)*V
+        end
+        return NoTangent(), dA, [NoTangent() for kwa in kwargs]...
+    end
+    return (U,S,V), pullback
+end
+
+
+function _elementwise_mult(a::AbstractTensorMap,b::AbstractTensorMap)
+    dst = similar(a);
+    for (k,block) in blocks(dst)
+        copyto!(block,blocks(a)[k].*blocks(b)[k]);
+    end
+    dst
 end

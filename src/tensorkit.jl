@@ -99,21 +99,21 @@ function ChainRulesCore.rrule(::typeof(TensorKit.tsvd), t::AbstractTensorMap;kwa
 
         dA = zero(t);
         #A_s bar term
-        if dS != ChainRulesCore.Zero()
+        if dS != ChainRulesCore.ZeroTangent()
             dA += U*dS*V
         end
         #A_uo bar term
-        if dU != ChainRulesCore.Zero()
+        if dU != ChainRulesCore.ZeroTangent()
             J = _elementwise_mult(F,(U'*dU))
             dA += U*(J+J')*S*V
         end
         #A_vo bar term
-        if dV != ChainRulesCore.Zero()
+        if dV != ChainRulesCore.ZeroTangent()
             K = _elementwise_mult(F ,V*dV')
             dA += U*S*(K+K')*V
         end
         #A_d bar term, only relevant if matrix is complex
-        if dV != ChainRulesCore.Zero() && T <: Complex
+        if dV != ChainRulesCore.ZeroTangent() && T <: Complex
             L = Diagonal(VpdV)
             dA += U*inv(S)*(L' - L)*V
         end

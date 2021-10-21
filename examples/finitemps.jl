@@ -15,18 +15,12 @@ let
         l = isomorphism(Matrix{ComplexF64},space(state[1],1),space(state[1],1))
         r = isomorphism(Matrix{ComplexF64},space(state[end],3),space(state[end],3))
 
-        @tensor lh[-1;-2]:=l[1,2]*state[1][2,3,-2]*conj(state[1][1,3,-1])
+        @tensor lh[-1;-2] := l[1,2]*state[1][2,3,-2]*conj(state[1][1,3,-1])
         lh*=0;
 
         for i in 2:length(state)
             @tensor lh[-1;-2] := lh[1,2]*state[i][2,3,-2]*conj(state[i][1,3,-1])
-
-            #this works
-            @tensor lh[-1;-2] := lh[-1;-2] + l[1,2]*state[i-1][2,3,4]*state[i][4,5,-2]*ham[6,3,7,5]*conj(state[i-1][1,6,8])*conj(state[i][8,7,-1])
-
-            #this doesnt
-            #@tensor lh[-1;-2]+= l[1,2]*state[i-1][2,3,4]*state[i][4,5,-2]*ham[6,3,7,5]*conj(state[i-1][1,6,8])*conj(state[i][8,7,-1])
-
+            @tensor lh[-1;-2]+= l[1,2]*state[i-1][2,3,4]*state[i][4,5,-2]*ham[6,3,7,5]*conj(state[i-1][1,6,8])*conj(state[i][8,7,-1])
             @tensor l[-1;-2] := l[1;2]*state[i-1][2,3,-2]*conj(state[i-1][1,3,-1])
         end
 

@@ -28,20 +28,20 @@ function ChainRulesCore.rrule(::typeof(KrylovKit.svdsolve), A::AbstractMatrix, h
         dA = nothing
 
         #A_s bar term
-        if dS != ChainRulesCore.Zero()
+        if dS != ChainRulesCore.ZeroTangent()
             As = U*LinearAlgebra.Diagonal(dS)*V'
             dA == nothing ? dA = As : dA += As
         end
 
         #A_uo bar term
-        if dU != ChainRulesCore.Zero()
+        if dU != ChainRulesCore.ZeroTangent()
             J = F .* (U'*dU)
             Auo = U*(J+J')*LinearAlgebra.Diagonal(S)*V'
             dA == nothing ? dA = Auo : dA += Auo
         end
 
         #A_vo bar term
-        if dV != ChainRulesCore.Zero()
+        if dV != ChainRulesCore.ZeroTangent()
             VpdV = V'*dV
             K = F .* VpdV
             Avo = U*LinearAlgebra.Diagonal(S)*(K+K')*V'
@@ -49,7 +49,7 @@ function ChainRulesCore.rrule(::typeof(KrylovKit.svdsolve), A::AbstractMatrix, h
         end
 
         #A_d bar term, only relevant if matrix is complex
-        if dV != ChainRulesCore.Zero() && T <: Complex
+        if dV != ChainRulesCore.ZeroTangent() && T <: Complex
             L = Diagonal(VpdV)
             Ad = U*LinearAlgebra.Diagonal(1 ./ S)*(L' - L)*V'
             dA == nothing ? dA = Ad : dA += Ad

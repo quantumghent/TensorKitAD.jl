@@ -1,37 +1,6 @@
-#https://arxiv.org/pdf/1402.2859.pdf
+using Revise,TensorKit, TensorKitAD, Zygote
 
-using Revise,TensorKit,TensorKitAD,Zygote,Plots;
-using LinearAlgebra:diag,Hermitian;
-
-function peps_ising(β)
-    T_buffer = Zygote.bufferfrom(zeros(ComplexF64,2,2,2,2));
-    T_buffer[1,1,1,1] = 1;
-    T_buffer[2,2,2,2] = 1;
-    T = TensorMap(copy(T_buffer),ComplexSpace(2)*ComplexSpace(2), ComplexSpace(2)*ComplexSpace(2))
-
-
-    Tz_buffer = Zygote.bufferfrom(zeros(ComplexF64,2,2,2,2));
-    Tz_buffer[1,1,1,1] = -1;
-    Tz_buffer[2,2,2,2] = 1;
-    Tz = TensorMap(copy(Tz_buffer),ComplexSpace(2)*ComplexSpace(2), ComplexSpace(2)*ComplexSpace(2))
-
-    dZ_buffer = Zygote.bufferfrom(zeros(ComplexF64,2,2));
-    dZ_buffer[1,1] = exp(β)
-    dZ_buffer[1,2] = exp(-β)
-    dZ_buffer[2,1] = exp(-β)
-    dZ_buffer[2,2] = exp(β)
-
-    #the derivative of sqrt() is defined for hermitian matrices, so we not it as hermitian, and then convert it back to a normal array
-    dZ = TensorMap(convert(Array,sqrt(Hermitian(copy(dZ_buffer)))), ComplexSpace(2), ComplexSpace(2))
-
-    @tensor peps_tensor[-1 -2;-3 -4] := T[1,2,3,4]*dZ[-1,1]*dZ[-2,2]*dZ[3,-3]*dZ[4,-4]
-    @tensor Z_tensor[-1 -2;-3 -4] := Tz[1,2,3,4]*dZ[-1,1]*dZ[-2,2]*dZ[3,-3]*dZ[4,-4]
-
-    return peps_tensor, Z_tensor
-end
-
-
-mutable struct peps_boundary{C,E}
+struct peps_boundary{C,E}
     C1::C
     C2::C
     C3::C
@@ -42,79 +11,172 @@ mutable struct peps_boundary{C,E}
     E3::E
     E4::E
 end
-function peps_boundary(D_bond, D_bound)
-    a,b,c,d = TensorMap(randn, ComplexF64, D_bound, D_bound),TensorMap(randn, ComplexF64, D_bound, D_bound),TensorMap(randn, ComplexF64, D_bound, D_bound),TensorMap(randn, ComplexF64, D_bound, D_bound)
-    e,f,g,h = TensorMap(randn, ComplexF64, D_bound*D_bond, D_bound),TensorMap(randn, ComplexF64, D_bound*D_bond, D_bound),TensorMap(randn, ComplexF64, D_bound*D_bond', D_bound),TensorMap(randn, ComplexF64, D_bound*D_bond', D_bound)
-    return peps_boundary(a/sqrt(norm(a)), b/sqrt(norm(b)), c/sqrt(norm(c)), d/sqrt(norm(d)), e/sqrt(norm(e)), f/sqrt(norm(f)), g/sqrt(norm(g)), h/sqrt(norm(h)))
+
+function init_peps(χbond, χphys)
+    Dbond = ℂ^χbond
+    Dphys = ℂ^χphys
+
+    return TensorMap(randn, ComplexF64, Dbond * Dbond * Dbond' * Dbond' ← Dphys)
 end
 
+function peps_boundary(χbond, χbound)
+    Dbond = ℂ^χbond
+    Dbound = ℂ^χbound
+    # Create corner environment
+    C1 = TensorMap(randn, ComplexF64, Dbound, Dbound)
+    C2 = TensorMap(randn, ComplexF64, Dbound, Dbound)
+    C3 = TensorMap(randn, ComplexF64, Dbound, Dbound)
+    C4 = TensorMap(randn, ComplexF64, Dbound, Dbound)
 
-function renorm_left!(boundary, Tensor; trscheme = truncbelow(1e-5))
-    @tensor C1_tilde[-1,-2;-3] := boundary.C1[-1,1]*boundary.E1[1,-2,-3]
+    # Create edge environment
+    E1 = TensorMap(randn, ComplexF64, Dbound * Dbond' * Dbond ← Dbound)
+    E2 = TensorMap(randn, ComplexF64, Dbound * Dbond' * Dbond ← Dbound)
+    E3 = TensorMap(randn, ComplexF64, Dbound * Dbond * Dbond' ← Dbound)
+    E4 = TensorMap(randn, ComplexF64, Dbound * Dbond * Dbond' ← Dbound)
 
-    @tensor E4_tilde[-1,-2;-3,-4,-5] := boundary.E4[-1,1,-5]*Tensor[1,-2,-3,-4]
-    @tensor C4_tilde[-1,-2,-3] := boundary.C4[1,-3]*boundary.E3[-1,-2,1]
-    #construct isometry for this operation
-    @tensor tmp[-1,-2;-3,-4] := C1_tilde[-1,-2,1]*conj(C1_tilde[-3,-4,1])  + conj(C4_tilde[1,-2,-1])*C4_tilde[1,-4,-3]
+    # Normalize
+    C1 = C1 / norm(C1)
+    C2 = C2 / norm(C2)
+    C3 = C3 / norm(C3)
+    C1 = C4 / norm(C4)
 
-    isometry = tsvd(tmp; trunc=trscheme)[1]
-    #contract neccecairy indices
-    @tensor C1[-1;-2] := C1_tilde[1,2,-2]*conj(isometry[1,2,-1])
-    @tensor E4[-1 -2;-3] := E4_tilde[1,2,-2,3,4]*isometry[4,3,-3]*conj(isometry[1,2,-1])
-    @tensor C4[-1;-2] := C4_tilde[-1,1,2]*isometry[2,1,-2]
+    E1 = E1 / norm(E1)
+    E2 = E2 / norm(E2)
+    E3 = E3 / norm(E3)
+    E4 = E4 / norm(E4)
 
-    boundary.C1 = C1/(norm(C1))
-    boundary.E4 = E4/(norm(E4))
-    boundary.C4 = C4/(norm(C4))
+    return peps_boundary(C1, C2, C3, C4, E1, E2, E3, E4)
 end
-function rotate_peps(boundary, Tensor)
-    @tensor new_tensor[-1 -2;-3 -4] := Tensor[-4,-1,-2,-3]
-    return peps_boundary(boundary.C4, boundary.C1, boundary.C2, boundary.C3, boundary.E4, boundary.E1, boundary.E2, boundary.E3), new_tensor
-end
-function calc_norm(boundary, Tensor)
-    return @tensor boundary.C1[1,2]*boundary.E1[2,5,3]*boundary.C2[3,4]*boundary.E2[4,10,12]*boundary.C3[12,11]*boundary.E3[11,9,8]*boundary.C4[8,6]*boundary.E4[6,7,1]*Tensor[7,9,10,5]
+
+function double_bit(E4,C1,E1,C2,E2,peps)
+    @tensor derp[-1 -2 -3;-4 -5 -6] := E4[-1 1 2;3]*C1[3;4]*E1[4 5 6;7]*E1[7 8 9;10]*C2[10;11]*E2[11 12 13;-4]*
+        peps[5 14 -2 1;16]*conj(peps[6 15 -3 2;16])*peps[8 12 -5 14;17]*conj(peps[9 13 -6 15;17])
 end
 
-function optimize_boundary(Tensor, Tz,old_boundary=peps_boundary(ℂ^2,ℂ^3);numiter=100,kwargs...)
+function left_move(boundary, peps; trscheme = truncdim(bound_dim(boundary))&truncbelow(1e-7))
+    above = double_bit(boundary.E4,boundary.C1,boundary.E1,boundary.C2,boundary.E2,peps);
+
+    rpeps = permute(peps,(3,4,1,2),(5,));
+    below = double_bit(boundary.E2,boundary.C3,boundary.E3,boundary.C4,boundary.E4,rpeps);
+
+    (Ra,Qa) = rightorth(above,alg=LQ());
+    (Qb,Rb) = leftorth(below,alg=QR());
+
+    @tensor lol[-1;-2] := Rb[-2;1 2 3]*Ra[1 2 3;-1]
+    (U,S,V) = tsvd(lol,trunc=trscheme);
+
+    ns = norm(S);
+    (sqS,isqS) = newton_schulz_iteration(S/ns);
+    isqS/=sqrt(ns)*one(eltype(U));
+    sqS*=sqrt(ns)*one(eltype(U));
+
+    @tensor Pa[-1;-2 -3 -4]:= conj(isqS[-1;2])*conj(V[2;1])*Rb[1;-2 -3 -4]
+    @tensor Pb[-1 -2 -3;-4] := Ra[-1 -2 -3;1]*conj(U[1;2])*conj(isqS[2;-4])
+
+    ## Insert a column of edge-peps-edge
+    @tensor C1[-1;-2] := boundary.C1[1, 2] * boundary.E1[2,3,4,-2]*Pa[-1;1 3 4]
+    @tensor C4[-1;-2] := boundary.C4[1,4] * boundary.E3[-1,2,3,1]*Pb[4 2 3;-2]
+    @tensor E4[-1 -2 -3;-4] := boundary.E4[1 2 3;4]*peps[5 -2 7 2;9]*conj(peps[6 -3 8 3;9])*Pb[4 5 6;-4]*Pa[-1;1 7 8]
+
+
+    C1 = C1 / norm(C1)
+    E4 = E4 / norm(E4)
+    C4 = C4 / norm(C4)
+
+    new_boundary = peps_boundary(C1,boundary.C2,boundary.C3,C4,boundary.E1,boundary.E2,boundary.E3,E4);
+
+    new_boundary
+end
+
+function left_rotate(boundary, peps)
+    peps = permute(peps, (2, 3, 4, 1), (5, ))
+    boundary = peps_boundary(boundary.C2, boundary.C3, boundary.C4, boundary.C1, boundary.E2, boundary.E3, boundary.E4, boundary.E1)
+    return boundary, peps
+end
+
+bound_dim(boundary) = dim(domain(boundary.C1))
+
+function compute_norm(peps, boundary)
+    return @tensor boundary.C1[1,2] * boundary.E1[2,4,7,3] * boundary.C2[3,9] * boundary.E2[9,10,11,17] * boundary.C3[17,16] * boundary.E3[16,14,15,13] * boundary.C4[13,12] * boundary.E4[12,5,6,1] * peps[4,10,14,5,8] * conj(peps[7,11,15,6,8])
+end
+
+function optimize_boundary(peps, boundary; numiter=10, kwargs...)
+    for i in 1:4*numiter
+        boundary = left_move(boundary, peps)
+        boundary, peps = left_rotate(boundary, peps)
+    end
+    return peps, boundary
+end
+
+function contract_energy(peps, boundary, H)
+    @tensor E_horizontal = boundary.C1[1, 3] * boundary.E4[2,7,9,1] * boundary.C4[4,2] * boundary.E1[3,5,8,13] * boundary.E3[14,6,10,4] * peps[5,15,6,7,12] * conj(peps[8,19,10,9,11]) * H[11,20,12,18] * boundary.E1[13,16,22,23] * boundary.E3[28,17,21,14] * peps[16,25,17,15,18] * conj(peps[22,26,21,19,20]) * boundary.C2[23,24] * boundary.E2[24,25,26,27] * boundary.C3[27,28]
+    @tensor N_horizontal = boundary.C1[1, 3] * boundary.E4[2,7,9,1] * boundary.C4[4,2] * boundary.E1[3,5,8,13] * boundary.E3[14,6,10,4] * peps[5,15,6,7,12] * conj(peps[8,19,10,9,12]) * boundary.E1[13,16,22,23] * boundary.E3[28,17,21,14] * peps[16,25,17,15,18] * conj(peps[22,26,21,19,18]) * boundary.C2[23,24] * boundary.E2[24,25,26,27] * boundary.C3[27,28]
+    E =  E_horizontal/N_horizontal
+
+    boundary, peps = left_rotate(boundary, peps)
+    @tensor E_horizontal = boundary.C1[1, 3] * boundary.E4[2,7,9,1] * boundary.C4[4,2] * boundary.E1[3,5,8,13] * boundary.E3[14,6,10,4] * peps[5,15,6,7,12] * conj(peps[8,19,10,9,11]) * H[11,20,12,18] * boundary.E1[13,16,22,23] * boundary.E3[28,17,21,14] * peps[16,25,17,15,18] * conj(peps[22,26,21,19,20]) * boundary.C2[23,24] * boundary.E2[24,25,26,27] * boundary.C3[27,28]
+    @tensor N_horizontal = boundary.C1[1, 3] * boundary.E4[2,7,9,1] * boundary.C4[4,2] * boundary.E1[3,5,8,13] * boundary.E3[14,6,10,4] * peps[5,15,6,7,12] * conj(peps[8,19,10,9,12]) * boundary.E1[13,16,22,23] * boundary.E3[28,17,21,14] * peps[16,25,17,15,18] * conj(peps[22,26,21,19,18]) * boundary.C2[23,24] * boundary.E2[24,25,26,27] * boundary.C3[27,28]
+    E +=  E_horizontal/N_horizontal
+
+    return E
+end
+
+# assuming ||A||<1, obtains A^1/2 and A^-1/2, easily derivable
+function newton_schulz_iteration(A,numiter=10)
+    #https://people.cs.umass.edu/~smaji/projects/matrix-sqrt/
+    Y = A;
+    Z = one(A);
+    temp = A;
 
     for i in 1:numiter
-        renorm_left!(old_boundary, Tensor; kwargs...)
-        old_boundary, Tensor = rotate_peps(old_boundary, Tensor)
-
-        renorm_left!(old_boundary, Tensor; kwargs...)
-        old_boundary, Tensor = rotate_peps(old_boundary, Tensor)
-
-        renorm_left!(old_boundary, Tensor; kwargs...)
-        old_boundary, Tensor = rotate_peps(old_boundary, Tensor)
-
-        renorm_left!(old_boundary, Tensor; kwargs...)
-        old_boundary, Tensor = rotate_peps(old_boundary, Tensor)
-
+        temp = 3/2*Y-Y*Z*Y/2;
+        Z = 3/2*Z-Z*Y*Z/2;
+        Y = temp;
     end
 
-    return real(calc_norm(old_boundary, Tz)./calc_norm(old_boundary, Tensor)),old_boundary
+    Y,Z
+end
+
+function ham_ising(J, K)
+    Sx = zeros(ComplexF64, 2, 2)
+    Sx[1,2] = 1
+    Sx[2,1] = 1
+
+    Sz = zeros(ComplexF64, 2, 2)
+    Sz[1,1] = 1
+    Sz[2,2] = -1
+
+    Dphys = ComplexSpace(2)
+    σx = TensorMap(Sx, Dphys, Dphys)
+    σz = TensorMap(Sz, Dphys, Dphys)
+
+    @tensor H[-1 -2 -3 -4] := J * σx[-4,-2] * σx[-3,-1]+σz[-4,-2]*one(σx)[-3,-1]
+    return H
 end
 
 
-βs = LinRange(0.0, 1, 20);
-magns = fill(0.0,length(βs));
-derivs = fill(0.0,length(βs));
+## Tests
+χbond = 2
+χphys = 2
+χbound = 10
 
-for (i,β) in enumerate(βs)
-    @show i;flush(stdout)
-    #random boundary
-    env = peps_boundary(ℂ^2,ℂ^50);
+T = init_peps(χbond, χphys);
+B = peps_boundary(χbond, χbound);
+H = ham_ising(-1,0);
 
-    (T,Tz) = peps_ising(β);
 
-    #optimize thoroughly to get magnetization
-    (magns[i],env) = optimize_boundary(T,Tz,env,numiter=500);
+for i in 1:10
+    T, B = optimize_boundary(T, B,numiter=100);
 
-    #approximate gradient with very few steps
-    #costfun(β) = first(optimize_boundary(peps_ising(β)...,env,numiter=10));
-    #derivs[i] = costfun'(β)
+    function tfun(x)
+        x,nb = optimize_boundary(x,B,numiter=10);
+        real(contract_energy(x,nb,H))
+    end
+
+
+    grad = tfun'(T);
+    @show tfun(T),norm(grad)
+    T -= 0.01*grad;
+    normalize!(T)
+    flush(stdout)
 end
-
-plot(βs,abs.(magns),seriestype=:scatter)
-
-plot(βs,abs.(derivs),seriestype=:scatter,ylim=(-0.1,1))

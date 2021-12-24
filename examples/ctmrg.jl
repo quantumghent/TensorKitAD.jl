@@ -64,7 +64,7 @@ function left_move(boundary, peps; trscheme = truncdim(χbound))
 
     @tensor blurp[-1 -2 -3;-4 -5 -6] := above[1 2 3;-1 -2 -3]*below[-4 -5 -6;1 2 3]
     (U,S,V) = tsvd(blurp,trunc = trscheme);
-    isqS = sdiag_inv_sqrt(S)*one(eltype(peps));
+    isqS = sdiag_inv_sqrt(S)
 
     @tensor Pa[-1;-2 -3 -4] := isqS[4,-1]*conj(V[4;1 2 3])*below[1 2 3;-2 -3 -4]
     @tensor Pb[-1 -2 -3;-4] := isqS[-4,4]*conj(U[1 2 3;4])*above[-1 -2 -3;1 2 3]
@@ -196,7 +196,6 @@ let
         (grad,_) = gradient(tfun,T,B);
 
         T-=α*g
-        normalize!(T)
         T, B = optimize_boundary(T, B,numiter=100);
 
         push!(pred,-real(dot(grad,g)));

@@ -1,3 +1,9 @@
+#you cannot really define the pullback wrt a function, because you don't have an inner product
+@non_differentiable TensorKit.TensorMap(f::Function,storagetype,cod,dom)
+
+@non_differentiable TensorKit.isomorphism(args...)
+@non_differentiable TensorKit.isometry(args...)
+
 function ChainRulesCore.rrule(::typeof(dot),a::AbstractTensorMap,b::AbstractTensorMap)
      function pullback(c)
         ∂a = @thunk(b * c')
@@ -68,50 +74,6 @@ function ChainRulesCore.rrule(::typeof(permute),tensor,leftind,rightind=())
     return permute(tensor,leftind,rightind),pullback
 end
 
-function ChainRulesCore.rrule(::typeof(isomorphism),args...)
-    isomorphism(args...),x->(NoTangent(),[NoTangent() for a in args]...)
-end
-
-#you cannot really define the pullback wrt a function, because you don't have an inner product
-function ChainRulesCore.rrule(::Type{<:TensorMap},f::Function,args...)
-    function pullback(tm)
-        ∂f = NoTangent()
-        (NoTangent(),∂f,[NoTangent() for a in args]...)
-    end
-
-    TensorMap(f,args...),pullback
-end
-function ChainRulesCore.rrule(::typeof(TensorKit.isometry),args...)
-    function pullback(tm)
-        (NoTangent(),[NoTangent() for a in args]...)
-    end
-
-    TensorKit.isometry(args...),pullback
-end
-
-function ChainRulesCore.rrule(::Type{<:TensorKit.LQ},args...)
-    function pullback(tm)
-        (NoTangent(),[NoTangent() for a in args]...)
-    end
-
-    TensorKit.LQ(args...),pullback
-end
-function ChainRulesCore.rrule(::Type{<:TensorKit.QR},args...)
-    function pullback(tm)
-        (NoTangent(),[NoTangent() for a in args]...)
-    end
-
-    TensorKit.QR(args...),pullback
-end
-
-function ChainRulesCore.rrule(::Type{<:TensorKit.TruncationDimension},args...)
-    function pullback(tm)
-        (NoTangent(),[NoTangent() for a in args]...)
-    end
-
-    TensorKit.TruncationDimension(args...),pullback
-end
-
 function ChainRulesCore.rrule(::Type{<:TensorMap},d::DenseArray,args...)
     function pullback(tm)
         ∂d = @thunk(convert(Array,tm))
@@ -168,7 +130,7 @@ function ChainRulesCore.rrule(::typeof(TensorKit.tsvd), t::AbstractTensorMap;kwa
             dA += (one(pru)-pru)*dU*pinv(S)*V
             dA += U*pinv(S)*dV*(one(prv)-prv)
         end
-        
+
         return NoTangent(), dA, [NoTangent() for kwa in kwargs]...
     end
     return (U,S,V), pullback

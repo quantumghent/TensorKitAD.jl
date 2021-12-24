@@ -1,17 +1,9 @@
-function ChainRulesCore.rrule(::typeof(TensorOperations.cached_similar_from_indices),args...)
-    TensorOperations.cached_similar_from_indices(args...),x->(NoTangent(),[NoTangent() for a in args]...)
-end
+@non_differentiable TensorOperations.cached_similar_from_indices(args...)
+@non_differentiable TensorOperations.similar_from_indices(args...)
 
-function ChainRulesCore.rrule(::typeof(TensorOperations.similar_from_indices),args...)
-    TensorOperations.similar_from_indices(args...),x->(NoTangent(),[NoTangent() for a in args]...)
-end
+ChainRulesCore.rrule(::typeof(TensorOperations.scalar),arg) =
+    TensorOperations.scalar(arg),v -> (NoTangent(),fill!(similar(arg), v))
 
-function ChainRulesCore.rrule(::typeof(TensorOperations.scalar),arg)
-    function pullback(v)
-        NoTangent(),fill!(similar(arg), v)
-    end
-    TensorOperations.scalar(arg),pullback
-end
 
 function ChainRulesCore.rrule(::typeof(TensorOperations.contract!),α,A,CA,B,CB,β,C,oindA,cindA,oindB,cindB,leftind,rightind,syms=nothing)
     _flipconj(s::Symbol) = s == :C ? :N : :C;
@@ -19,7 +11,7 @@ function ChainRulesCore.rrule(::typeof(TensorOperations.contract!),α,A,CA,B,CB,
     res = TensorOperations.contract!(α,A,CA,B,CB,β,copy(C),oindA,cindA,oindB,cindB,leftind,rightind,syms);
 
     function pullback(v)
-        dα = begin
+        dα = @thunk begin
             t = res-β*C
             if α != zero(α)
                 t/=α
@@ -27,7 +19,7 @@ function ChainRulesCore.rrule(::typeof(TensorOperations.contract!),α,A,CA,B,CB,
             dot(t,v)
         end
 
-        dA = begin
+        dA = @thunk begin
             invCperm = TupleTools.invperm(tuple(leftind...,rightind...));
             oindv = invCperm[1:length(oindA)];
             cindv = invCperm[length(oindA)+1:end];
@@ -41,11 +33,15 @@ function ChainRulesCore.rrule(::typeof(TensorOperations.contract!),α,A,CA,B,CB,
                 vC = :C
             end
 
-            TensorOperations.contract!(α',v,vC,B,fCB,zero(β),zero(A),oindv,cindv,cindB,oindB,invA,())
+
+
+            c_dA = TensorOperations.contract!(α',v,vC,B,fCB,zero(β),similar(A,eltype(res)),oindv,cindv,cindB,oindB,invA,())
+
+            (!(eltype(A)<:Complex) && (eltype(c_dA)<:Complex)) ? real(c_dA) : c_dA
         end
         dCA = NoTangent()
 
-        dB = begin
+        dB = @thunk begin
             invCperm = TupleTools.invperm(tuple(leftind...,rightind...));
             oindv = invCperm[1:length(oindA)];
             cindv = invCperm[length(oindA)+1:end];
@@ -60,16 +56,13 @@ function ChainRulesCore.rrule(::typeof(TensorOperations.contract!),α,A,CA,B,CB,
                 vC = :C
             end
 
-            TensorOperations.contract!(α',A,fCA,v,vC,zero(β),zero(B),cindA,oindA,cindv,oindv,invB,())
+            c_dB = TensorOperations.contract!(α',A,fCA,v,vC,zero(β),similar(B,eltype(res)),cindA,oindA,cindv,oindv,invB,())
+            (!(eltype(B)<:Complex) && (eltype(c_dB)<:Complex)) ? real(c_dB) : c_dB
         end
 
         dCB = NoTangent()
-        dβ= begin
-            dot(C,v)
-        end
-        dC = begin
-            β'*v
-        end
+        dβ= @thunk dot(C,v)
+        dC = @thunk β'*v
 
         doindA = NoTangent()
         dcindA = NoTangent()
@@ -89,7 +82,7 @@ function ChainRulesCore.rrule(::typeof(TensorOperations.add!),α,A,CA,β,C,lefti
     res = TensorOperations.add!(α,A,CA,β,copy(C),leftind,rightind);
 
     function pullback(v)
-        dα = begin
+        dα = @thunk begin
             t = res - β*C
             if α != zero(α)
                 t/=α
@@ -97,16 +90,17 @@ function ChainRulesCore.rrule(::typeof(TensorOperations.add!),α,A,CA,β,C,lefti
             dot(t,v)
         end
 
-        dA = begin
+        dA = @thunk begin
             invCperm = TupleTools.invperm(tuple(leftind...,rightind...));
-            TensorOperations.add!(CA == :N ? α' : α,v,CA,zero(β),zero(A),invCperm,())
+            c_dA = TensorOperations.add!(CA == :N ? α' : α,v,CA,zero(β),similar(A,eltype(res)),invCperm,())
+            (!(eltype(A)<:Complex) && (eltype(c_dA)<:Complex)) ? real(c_dA) : c_dA
         end
 
         dCA = NoTangent()
 
-        dβ = (dot(C,v))
+        dβ = @thunk (dot(C,v))
 
-        dC = (β'*v)
+        dC = @thunk (β'*v)
 
         dleftind = NoTangent()
         drightind = NoTangent()

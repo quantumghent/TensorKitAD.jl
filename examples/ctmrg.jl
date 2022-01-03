@@ -1,4 +1,5 @@
-using Revise, TensorKit,TensorKitAD, Zygote
+using Revise, TensorKit,TensorKitAD, Zygote, OptimKit
+import LinearAlgebra;
 
 struct peps_boundary{C,E}
     C1::C
@@ -12,29 +13,21 @@ struct peps_boundary{C,E}
     E4::E
 end
 
-function init_peps(χbond, χphys)
-    Dbond = ℂ^χbond
-    Dphys = ℂ^χphys
-
-    return TensorMap(randn, Float64, Dbond * Dbond * Dbond' * Dbond' ← Dphys)
-end
+init_peps(Dbond, Dphys) = TensorMap(randn, ComplexF64, Dbond * Dbond * Dbond' * Dbond' ← Dphys)
 
 
-
-function peps_boundary(χbond, χbound)
-    Dbond = ℂ^χbond
-    Dbound = ℂ^χbound
+function peps_boundary(Dbond, Dbound)
     # Create corner environment
-    C1 = TensorMap(randn, Float64, Dbound, Dbound)
-    C2 = TensorMap(randn, Float64, Dbound, Dbound)
-    C3 = TensorMap(randn, Float64, Dbound, Dbound)
-    C4 = TensorMap(randn, Float64, Dbound, Dbound)
+    C1 = TensorMap(randn, ComplexF64, Dbound, Dbound)
+    C2 = TensorMap(randn, ComplexF64, Dbound, Dbound)
+    C3 = TensorMap(randn, ComplexF64, Dbound, Dbound)
+    C4 = TensorMap(randn, ComplexF64, Dbound, Dbound)
 
     # Create edge environment
-    E1 = TensorMap(randn, Float64, Dbound * Dbond' * Dbond ← Dbound)
-    E2 = TensorMap(randn, Float64, Dbound * Dbond' * Dbond ← Dbound)
-    E3 = TensorMap(randn, Float64, Dbound * Dbond * Dbond' ← Dbound)
-    E4 = TensorMap(randn, Float64, Dbound * Dbond * Dbond' ← Dbound)
+    E1 = TensorMap(randn, ComplexF64, Dbound * Dbond' * Dbond ← Dbound)
+    E2 = TensorMap(randn, ComplexF64, Dbound * Dbond' * Dbond ← Dbound)
+    E3 = TensorMap(randn, ComplexF64, Dbound * Dbond * Dbond' ← Dbound)
+    E4 = TensorMap(randn, ComplexF64, Dbound * Dbond * Dbond' ← Dbound)
 
     # Normalize
     C1 = C1 / norm(C1)
@@ -56,7 +49,7 @@ function double_bit(E4,C1,E1,C2,E2,peps)
         peps[5 14 -2 1;16]*conj(peps[6 15 -3 2;16])*peps[8 12 -5 14;17]*conj(peps[9 13 -6 15;17])
 end
 
-function left_move(boundary, peps; trscheme = truncdim(χbound))
+function left_move(boundary, peps; trscheme = truncdim(dim(χbound)))
     above = double_bit(boundary.E4,boundary.C1,boundary.E1,boundary.C2,boundary.E2,peps);
 
     rpeps = permute(peps,(3,4,1,2),(5,));
@@ -68,9 +61,6 @@ function left_move(boundary, peps; trscheme = truncdim(χbound))
 
     @tensor Pa[-1;-2 -3 -4] := isqS[4,-1]*conj(V[4;1 2 3])*below[1 2 3;-2 -3 -4]
     @tensor Pb[-1 -2 -3;-4] := isqS[-4,4]*conj(U[1 2 3;4])*above[-1 -2 -3;1 2 3]
-
-    #Pa = permute(permute(below,(4,5,6),(1,2,3))*V'*isqS,(4,),(1,2,3));
-    #Pb = permute(isqS*U'*permute(above,(4,5,6),(1,2,3)),(2,3,4),(1,))
 
     ## Insert a column of edge-peps-edge
     @tensor C1[-1;-2] := boundary.C1[1, 2] * boundary.E1[2,3,4,-2]*Pa[-1;1 3 4]
@@ -84,30 +74,20 @@ function left_move(boundary, peps; trscheme = truncdim(χbound))
     peps_boundary(C1,boundary.C2,boundary.C3,C4,boundary.E1,boundary.E2,boundary.E3,E4);
 end
 
-import LinearAlgebra;
-
 function sdiag_inv_sqrt(S::AbstractTensorMap)
     toret = similar(S);
     if sectortype(S) == Trivial
-        copyto!(toret.data,LinearAlgebra.diagm((sqrt.(LinearAlgebra.diag(S.data)).+1e-12).^-1));
+        copyto!(toret.data,LinearAlgebra.diagm(LinearAlgebra.diag(S.data).^(-1/2)));
     else
         for (k,b) in blocks(S)
-            copyto!(toret[k],LinearAlgebra.diagm((sqrt.(LinearAlgebra.diag(b)).+1e-12).^-1));
+            copyto!(blocks(toret)[k],LinearAlgebra.diagm(LinearAlgebra.diag(b).^(-1/2)));
         end
     end
-    #@show norm(S),norm(toret),norm(toret^3)
     toret
 end
 function TensorKitAD.ChainRulesCore.rrule(::typeof(sdiag_inv_sqrt),S::AbstractTensorMap)
-
     toret = sdiag_inv_sqrt(S);
-    #c̄ -> (-1/2*toret'^3*c̄,)
-    function backwards(c̄)
-        slurp = -1/2*TensorKitAD._elementwise_mult(c̄,toret'^3)
-
-        (TensorKitAD.ChainRulesCore.NoTangent(),slurp)
-    end
-    toret, backwards
+    toret, c̄ -> (TensorKitAD.ChainRulesCore.NoTangent(),-1/2*TensorKitAD._elementwise_mult(c̄,toret'^3))
 end
 
 function left_rotate(boundary, peps)
@@ -116,11 +96,9 @@ function left_rotate(boundary, peps)
     return boundary, peps
 end
 
-bound_dim(boundary) = dim(domain(boundary.C1))
+compute_norm(peps, boundary) =
+    @tensor boundary.C1[1,2] * boundary.E1[2,4,7,3] * boundary.C2[3,9] * boundary.E2[9,10,11,17] * boundary.C3[17,16] * boundary.E3[16,14,15,13] * boundary.C4[13,12] * boundary.E4[12,5,6,1] * peps[4,10,14,5,8] * conj(peps[7,11,15,6,8])
 
-function compute_norm(peps, boundary)
-    return @tensor boundary.C1[1,2] * boundary.E1[2,4,7,3] * boundary.C2[3,9] * boundary.E2[9,10,11,17] * boundary.C3[17,16] * boundary.E3[16,14,15,13] * boundary.C4[13,12] * boundary.E4[12,5,6,1] * peps[4,10,14,5,8] * conj(peps[7,11,15,6,8])
-end
 
 function optimize_boundary(peps, boundary; numiter=10, kwargs...)
     for i in 1:4*numiter
@@ -144,7 +122,8 @@ function contract_energy(peps, boundary, H)
 end
 
 function ham_heis()
-    Sx = zeros(Float64, 2, 2)
+
+    Sx = zeros(ComplexF64, 2, 2)
     Sx[1,2] = 1
     Sx[2,1] = 1
 
@@ -152,7 +131,7 @@ function ham_heis()
     Sy[1,2] = 1im
     Sy[2,1] = -1im
 
-    Sz = zeros(Float64, 2, 2)
+    Sz = zeros(ComplexF64, 2, 2)
     Sz[1,1] = 1
     Sz[2,2] = -1
 
@@ -161,51 +140,44 @@ function ham_heis()
     σy = TensorMap(Sy, Dphys, Dphys)
     σz = TensorMap(Sz, Dphys, Dphys)
 
-    @tensor H[-1 -2 -3 -4] := σx[-4,-2] * σx[-3,-1]+σy[-4,-2] * σy[-3,-1]+σz[-4,-2] * σz[-3,-1]
+    @tensor H[-1 -2 -3 -4] := -σx[-4,-2] * σx[-3,-1]-σy[-4,-2] * σy[-3,-1]+σz[-4,-2] * σz[-3,-1]
     return H
 end
 
 ## Tests
-const χbond = 2
-const χphys = 2
-const χbound = 10;
+const χbond = ℂ^2
+const χphys = ℂ^2
+const χbound = ℂ^20;
 
-let
-    T = init_peps(χbond, χphys);
-    B = peps_boundary(χbond, χbound);
+function cfun(x)
+    (T,B) = x;
     H = ham_heis();
 
-    T, B = optimize_boundary(T, B,numiter=100);
-    contract_energy(T,B,H)
-
-    g = init_peps(χbond,χphys);
-
-    α = 0.001;
-
-    pred = [];
-    mes = [];
-
-    for i in 0:10
-        E1 = contract_energy(T,B,H)
-
-        function tfun(x,B)
-            x,B = optimize_boundary(x,B,numiter=10);
-            real(contract_energy(x,B,H))
-        end
-
-        (grad,_) = gradient(tfun,T,B);
-
-        T-=α*g
-        T, B = optimize_boundary(T, B,numiter=100);
-
-        push!(pred,-real(dot(grad,g)));
-
-        E2 = contract_energy(T,B,H);
-        push!(mes,(E2-E1)/α)
-        @show i,E2;flush(stdout);
+    function tfun(x)
+        x,B = optimize_boundary(x,B,numiter=10);
+        real(contract_energy(x,B,H))
     end
 
-    @show pred
+    E = tfun(T);
+    grad = tfun'(T);
+    (E,grad)
+end
 
-    @show mes
+function my_retract(x,η,α)
+    (T,B) = x;
+    @info α;flush(stderr)
+    T += α*η;
+    T, B = optimize_boundary(T, B,numiter=100);
+    (T,B),η
+end
+
+my_inner(x,η_1,η_2) = real(dot(η_1,η_2))
+
+let
+
+    T = init_peps(χbond, χphys);
+    B = peps_boundary(χbond, χbound);
+    T, B = optimize_boundary(T, B,numiter=100);
+
+    optimize(cfun, (T,B),ConjugateGradient(verbosity=2); inner=my_inner,retract=my_retract)
 end

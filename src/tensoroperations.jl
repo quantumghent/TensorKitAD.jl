@@ -5,9 +5,9 @@ ChainRulesCore.rrule(::typeof(TensorOperations.scalar),arg) =
     TensorOperations.scalar(arg),v -> (NoTangent(),fill!(similar(arg), v))
 
 
-function ChainRulesCore.rrule(::typeof(TensorOperations.contract!),α,A,CA,B,CB,β,C,oindA,cindA,oindB,cindB,leftind,rightind,syms=nothing)
-    _flipconj(s::Symbol) = s == :C ? :N : :C;
+_flipconj(s::Symbol) = s == :C ? :N : :C;
 
+function ChainRulesCore.rrule(::typeof(TensorOperations.contract!),α,A,CA,B,CB,β,C,oindA,cindA,oindB,cindB,leftind,rightind,syms=nothing)
     res = TensorOperations.contract!(α,A,CA,B,CB,β,copy(C),oindA,cindA,oindB,cindB,leftind,rightind,syms);
 
     function pullback(v)
@@ -110,19 +110,13 @@ function ChainRulesCore.rrule(::typeof(TensorOperations.add!),α,A,CA,β,C,lefti
     res,pullback
 end
 
-#=
-#to do trace! properly I guess I'd need isomorphism to be generically defined for matrices?
 function ChainRulesCore.rrule(::typeof(TensorOperations.trace!),α,A,CA,β,C,leftind,rightind,cind1,cind2)
-    @show "getting traced"
-    _flipconj(s::Symbol) = s == :C ? :N : :C;
-
-    orig_C = copy(C);
-    res = TensorOperations.trace!(α,A,CA,β,C,leftind,rightind,cind1,cind2);
+    res = TensorOperations.trace!(α,A,CA,β,copy(C),leftind,rightind,cind1,cind2);
 
     function pullback(v)
 
         dα = @thunk begin
-            t = res-beta*orig_C
+            t = res-β*C
             if α != zero(α)
                 t/=α
             end
@@ -130,13 +124,20 @@ function ChainRulesCore.rrule(::typeof(TensorOperations.trace!),α,A,CA,β,C,lef
         end
 
         dA = @thunk begin
-            invCperm = TupleTools.invperm(tuple(leftind...,rightind...));
+            invCperm = TupleTools.invperm(tuple(leftind...,rightind...,cind1...,cind2...));
+            nli = invCperm[1:numout(A)]
+            nri = invCperm[numout(A)+1:end]
+
+            tracer = TensorOperations.similar_from_indices(eltype(A), cind1, cind2,A,CA)
+            one!(tracer);
+
+            TensorOperations.contract!(CA == :N ? α' : α,v,CA,tracer,CA,zero(α),similar(A),ntuple(x->x,length(leftind)+length(rightind)),(),ntuple(x->x,length(cind1)+length(cind2)),(),nli,nri);
 
         end
 
         dCA = NoTangent()
 
-        dβ= @thunk(dot(orig_C,v))
+        dβ = @thunk(dot(C,v))
         dC = @thunk(β'*v)
         dleftind = NoTangent()
         drightind = NoTangent()
@@ -147,4 +148,3 @@ function ChainRulesCore.rrule(::typeof(TensorOperations.trace!),α,A,CA,β,C,lef
     end
     res,pullback
 end
-=#

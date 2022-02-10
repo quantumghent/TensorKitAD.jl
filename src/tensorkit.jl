@@ -218,3 +218,22 @@ function backwards_rightorth_lq(A,l,q,dl,dq)
     #@show norm(A),norm(l),norm(q),norm(out)
     out
 end
+
+
+function ChainRulesCore.rrule(::typeof(Base.convert),::Type{Dict},t::AbstractTensorMap)
+    out = convert(Dict,t)
+    function pullback(c)
+
+        if haskey(c,:data) # :data is the only thing for which this dual makes sense
+            dual = copy(out);
+            dual[:data] = c[:data]
+            return (NoTangent(),NoTangent(),convert(TensorMap,dual))
+        else
+            # instead of zero(t) you can also return ZeroTangent(), which is type unstable
+            return (NoTangent(),NoTangent(),zero(t))
+        end
+
+    end
+    out,pullback
+end
+ChainRulesCore.rrule(::typeof(Base.convert),::Type{TensorMap},t::Dict{Symbol,Any}) = convert(TensorMap,t),v->convert(Dict,v)

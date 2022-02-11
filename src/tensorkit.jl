@@ -236,4 +236,4 @@ function ChainRulesCore.rrule(::typeof(Base.convert),::Type{Dict},t::AbstractTen
     end
     out,pullback
 end
-ChainRulesCore.rrule(::typeof(Base.convert),::Type{TensorMap},t::Dict{Symbol,Any}) = convert(TensorMap,t),v->convert(Dict,v)
+ChainRulesCore.rrule(::typeof(Base.convert),::Type{TensorMap},t::Dict{Symbol,Any}) = convert(TensorMap,t),v->(NoTangent(),NoTangent(),convert(Dict,v))

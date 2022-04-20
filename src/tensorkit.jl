@@ -94,7 +94,13 @@ function ChainRulesCore.rrule(::typeof(TensorKit.tsvd), t::AbstractTensorMap;kwa
         src = blocks(S)[k]
 
         @inbounds for i in 1:size(dst,1),j in 1:size(dst,2)
-            dst[i,j] = (i == j) ? zero(eltype(S)) : 1/(src[j,j]^2-src[i,i]^2)
+            if abs(src[j,j] - src[i,i])<1e-12
+                d = 1e-12
+            else
+                d = src[j,j]^2-src[i,i]^2
+            end
+            
+            dst[i,j] = (i == j) ? zero(eltype(S)) : 1/d
         end
     end
 

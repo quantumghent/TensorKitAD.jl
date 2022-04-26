@@ -3,17 +3,16 @@ using LinearAlgebra, KrylovKit, ChainRulesCore, Test
 function bieigsolve(A::AbstractMatrix, x₀; which=:LM)
     λᵣ, vᵣ, infoᵣ = eigsolve(A, x₀, 1, which, Arnoldi())
     λₗ, vₗ, infoₗ = eigsolve(A', x₀, 1, which, Arnoldi())
-    
+
     infoₗ.converged > 0 && infoᵣ.converged > 0 || @warn "Eigensolvers not converged."
-    
+
     λᵣ = first(λᵣ)
     λₗ = first(λₗ)
     conj(λₗ) ≈ λᵣ || @warn "Eigenvalues disagree: $λᵣ, $λₗ"
-    
+
     vᵣ = first(vᵣ)
     vₗ = first(vₗ)
-    # vₗ ./= dot(vᵣ, vₗ)
-    
+
     return λᵣ, vₗ, vᵣ
 end
 
@@ -24,35 +23,36 @@ function ChainRulesCore.rrule(
     kwargs...
 )
     λ, vₗ, vᵣ = bieigsolve(A, x₀; kwargs...)
-    
+
     function bieigsolve_pullback(X̄)
         λ̄, l̄, r̄ = X̄
-        
+        f = dot(vₗ,vᵣ);
+
         # account for normalization
-        # r̄ .-= real(dot(vᵣ, r̄)) .* vᵣ
-        # l̄ .-= real(dot(r̄, l̄)) .* r̄ + real(dot(vₗ, r̄)) .* vᵣ
-        
+        r̄ -= dot(vᵣ, r̄) * vᵣ
+        l̄ -= dot(vₗ, l̄) * vₗ
+
         # (A - λI)ξₗ = (1 - vᵣvₗ')l̄
         # vₗ' ξₗ = 0
         if isa(l̄, typeof(ZeroTangent()))
             ξₗ = l̄
         else
-            ξₗ, infoₗ = linsolve(A - vᵣ * vₗ', l̄ - vᵣ * vₗ' * l̄, -λ)
+            ξₗ, infoₗ = linsolve(A, l̄ - vᵣ * vₗ' * l̄/f, -λ)
             infoₗ.converged == 0 && @warn "Reverse left cotangent problem did not converge."
-            ξₗ .*= (1 - dot(vₗ, ξₗ))
+            ξₗ -=  vᵣ*dot(vₗ, ξₗ)/f
         end
-        
+
         # (A - λI)'ξᵣ = (1 - vₗvᵣ')r̄
         # vᵣ' ξᵣ = 0
         if isa(r̄, typeof(ZeroTangent()))
             ξᵣ = r̄
         else
-            ξᵣ, infoᵣ = linsolve(A' - vₗ * vᵣ', r̄ - vₗ * vᵣ' * r̄, -conj(λ))
+            ξᵣ, infoᵣ = linsolve(A', r̄ - vₗ * vᵣ' * r̄/f', -conj(λ))
             infoᵣ.converged == 0 && @warn "Reverse right cotangent problem did not converge."
-            ξᵣ .*= (1 - dot(vᵣ, ξᵣ))
+            ξᵣ -=  vₗ*dot(vᵣ, ξᵣ)/f'
         end
-        
-        ∂A = λ̄ * vₗ * vᵣ' - vₗ * ξₗ' - ξᵣ * vᵣ'
+
+        ∂A = λ̄ * vₗ * vᵣ'/f' - vₗ * ξₗ' - ξᵣ * vᵣ'
         return NoTangent(), ∂A, ZeroTangent()
     end
     return (λ, vₗ, vᵣ), bieigsolve_pullback
@@ -118,11 +118,15 @@ _, b, = ∂g(ȳ)
 @test fₐ ≈ gₐ
 @test ∂f(ȳ)[2] ≈ ∂g(ȳ)[2]
 
-@test jacobian(costf, A)[1] ≈ jacobian(costg, A)[1]
-
+for i in 1:100
+    j1 = jacobian(costf, A)[1];
+    j2 = jacobian(costg, A)[1];
+    @show norm(j1),norm(j2),j1./j2
+    @show @test j1 ≈ j2
+end
 
 ## Some harder test, left and right eigenvector different
-T = Float64
+T = ComplexF64
 n = 2
 A = rand(T, (n,n))
 

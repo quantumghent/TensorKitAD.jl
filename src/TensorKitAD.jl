@@ -1,6 +1,7 @@
 module TensorKitAD
-    using TensorKit, TensorOperations, ChainRulesCore, TupleTools, KrylovKit, LinearAlgebra
-    using ChainRules
+
+    using TensorKit, TensorOperations, KrylovKit, MPSKit
+    using ChainRulesCore, TupleTools, LinearAlgebra, ChainRules
 
     include("tensorkit.jl")
     include("tensoroperations.jl")
@@ -8,4 +9,5 @@ module TensorKitAD
     #using BackwardsLinalg # only place I know that contains qr backwards derivative
     # however, it's outdated, so I just stole the code
     include("backwardslinalg.jl")
+    include("mpskit.jl")
 end # module

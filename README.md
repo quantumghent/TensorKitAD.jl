@@ -29,4 +29,4 @@ some basic operations are supported
 
 ## KrylovKit.jl
 
-krylovkit is tricky, because its methods often takes a function handle. In principle you can define the pullback wrt to the function handle, but the AD engine has no way to work with inproducts of generic functions. Maybe there is a smart way around this - the easy way is to define LinearMap objects, which in turn can be made deriveable.
+rules will move (or have moved) to KrylovKit itself

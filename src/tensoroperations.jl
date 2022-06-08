@@ -125,13 +125,13 @@ function ChainRulesCore.rrule(::typeof(TensorOperations.trace!),α,A,CA,β,C,lef
 
         dA = @thunk begin
             invCperm = TupleTools.invperm(tuple(leftind...,rightind...,cind1...,cind2...));
-            nli = invCperm[1:numout(A)]
-            nri = invCperm[numout(A)+1:end]
+            #nli = invCperm[1:numout(A)]
+            #nri = invCperm[numout(A)+1:end]
 
             tracer = TensorOperations.similar_from_indices(eltype(A), cind1, cind2,A,CA)
-            one!(tracer);
+            tracer = one(tracer);
 
-            TensorOperations.contract!(CA == :N ? α' : α,v,CA,tracer,CA,zero(α),similar(A),ntuple(x->x,length(leftind)+length(rightind)),(),ntuple(x->x,length(cind1)+length(cind2)),(),nli,nri);
+            TensorOperations.contract!(CA == :N ? α' : α,v,CA,tracer,CA,zero(α),similar(A),ntuple(x->x,length(leftind)+length(rightind)),(),ntuple(x->x,length(cind1)+length(cind2)),(),invCperm,());
 
         end
 

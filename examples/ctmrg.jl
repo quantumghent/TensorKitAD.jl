@@ -1,4 +1,6 @@
+Base.Experimental.@compiler_options optimize=0 compile=min infer=no
 using Revise, TensorKit,TensorKitAD, Zygote, OptimKit
+
 import LinearAlgebra;
 
 struct peps_boundary{C,E}
@@ -44,12 +46,41 @@ function peps_boundary(Dbond, Dbound)
 end
 
 
+function northwest_corner(E4,C1,E1,peps)
+    @tensor corner[-1 -2 -3;-4 -5 -6] := E4[-1 1 2;3]*C1[3;4]*E1[4 5 6;-4]*peps[5 -5 -2 1;7]*conj(peps[6 -6 -3 2;7])
+end
+
+
+
+function left_move(boundary, peps; trscheme = truncdim(dim(χbound)))
+    Q1 = northwest_corner(boundary.E3,boundary.C3,boundary.E4,permute(peps,(4,1,2,3),(5,)));
+    Q2 = northwest_corner(boundary.E4,boundary.C4,boundary.E1,peps);
+
+    (U,S,V) = tsvd(Q1*Q2,trunc=trscheme,alg=SVD());
+    isqS = sdiag_inv_sqrt(S);
+
+    Q = isqS*U'*Q1;
+    P = Q2*V'*isqS;
+
+    ## Insert a column of edge-peps-edge
+    @tensor C1[-1;-2] := boundary.C1[1,2] * boundary.E1[2,3,4,-2]*Q[-1;1 3 4]
+    @tensor C4[-1;-2] := boundary.C4[1,4] * boundary.E3[-1,2,3,1]*P[4 2 3;-2]
+    @tensor E4[-1 -2 -3;-4] := boundary.E4[1 2 3;4]*peps[5 -2 7 2;9]*conj(peps[6 -3 8 3;9])*P[4 5 6;-4]*Q[-1;1 7 8]
+
+    C1 = C1 / norm(C1)
+    E4 = E4 / norm(E4)
+    C4 = C4 / norm(C4)
+
+    peps_boundary(C1,boundary.C2,boundary.C3,C4,boundary.E1,boundary.E2,boundary.E3,E4);
+end
+
+#=
 function double_bit(E4,C1,E1,C2,E2,peps)
     @tensor derp[-1 -2 -3;-4 -5 -6] := E4[-1 1 2;3]*C1[3;4]*E1[4 5 6;7]*E1[7 8 9;10]*C2[10;11]*E2[11 12 13;-4]*
         peps[5 14 -2 1;16]*conj(peps[6 15 -3 2;16])*peps[8 12 -5 14;17]*conj(peps[9 13 -6 15;17])
 end
 
-function left_move(boundary, peps; trscheme = truncdim(dim(χbound)))
+function old_left_move(boundary, peps; trscheme = truncdim(dim(χbound)))
     above = double_bit(boundary.E4,boundary.C1,boundary.E1,boundary.C2,boundary.E2,peps);
 
     rpeps = permute(peps,(3,4,1,2),(5,));
@@ -73,7 +104,7 @@ function left_move(boundary, peps; trscheme = truncdim(dim(χbound)))
 
     peps_boundary(C1,boundary.C2,boundary.C3,C4,boundary.E1,boundary.E2,boundary.E3,E4);
 end
-
+=#
 function sdiag_inv_sqrt(S::AbstractTensorMap)
     toret = similar(S);
     if sectortype(S) == Trivial
@@ -87,7 +118,7 @@ function sdiag_inv_sqrt(S::AbstractTensorMap)
 end
 function TensorKitAD.ChainRulesCore.rrule(::typeof(sdiag_inv_sqrt),S::AbstractTensorMap)
     toret = sdiag_inv_sqrt(S);
-    toret, c̄ -> (TensorKitAD.ChainRulesCore.NoTangent(),-1/2*TensorKitAD._elementwise_mult(c̄,toret'^3))
+    toret,c̄ -> (TensorKitAD.ChainRulesCore.NoTangent(),-1/2*TensorKitAD._elementwise_mult(c̄,toret'^3))
 end
 
 function left_rotate(boundary, peps)
@@ -101,8 +132,24 @@ compute_norm(peps, boundary) =
 
 
 function optimize_boundary(peps, boundary; numiter=10, kwargs...)
+    spectra = [boundary.C1,boundary.C2,boundary.C3,boundary.C4]
     for i in 1:4*numiter
         boundary = left_move(boundary, peps)
+
+        nspec = tsvd(boundary.C1,alg=SVD())[2];
+        err = norm(spectra[mod1(i,4)]-nspec); # gebruiken zij meestal
+        if err < 1e-12
+            while mod1(i,4) != 1
+                boundary, peps = left_rotate(boundary, peps)
+                i += 1;
+            end
+            break
+        end
+
+        b = Zygote.bufferfrom(spectra);
+        b[mod1(i,4)] = nspec;
+        spectra = copy(b)
+
         boundary, peps = left_rotate(boundary, peps)
     end
     return peps, boundary
@@ -149,6 +196,7 @@ const χbond = ℂ^2
 const χphys = ℂ^2
 const χbound = ℂ^20;
 
+
 function cfun(x)
     (T,B) = x;
     H = ham_heis();
@@ -160,12 +208,16 @@ function cfun(x)
 
     E = tfun(T);
     grad = tfun'(T);
+
+    @info E,norm(grad);
+    flush(stderr)
+    @assert !isnan(norm(grad))
     (E,grad)
 end
 
 function my_retract(x,η,α)
     (T,B) = x;
-    @info α;flush(stderr)
+    #@info α;flush(stderr)
     T += α*η;
     T, B = optimize_boundary(T, B,numiter=100);
     (T,B),η
@@ -173,8 +225,11 @@ end
 
 my_inner(x,η_1,η_2) = real(dot(η_1,η_2))
 
-let
+T = init_peps(χbond, χphys);
+B = peps_boundary(χbond, χbound);
+T, B = optimize_boundary(T, B,numiter=100);
 
+let
     T = init_peps(χbond, χphys);
     B = peps_boundary(χbond, χbound);
     T, B = optimize_boundary(T, B,numiter=100);

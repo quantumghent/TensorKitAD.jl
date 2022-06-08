@@ -82,6 +82,16 @@ function ChainRulesCore.rrule(::Type{<:TensorMap},d::DenseArray,args...)
     TensorMap(d,args...),pullback
 end
 
+function ChainRulesCore.rrule(::typeof(convert),::Type{<:Array},t::AbstractTensorMap)
+    function pullback(tm)
+        spacetype(t) <: ComplexSpace || throw(ArgumentError("not yet implemented"))
+        ∂d = TensorMap(tm,codomain(t),domain(t))
+        (NoTangent(),NoTangent(),∂d)
+    end
+
+    convert(Array,t),pullback
+end
+
 #pullback rule based on tom's krylovkit rule
 function ChainRulesCore.rrule(::typeof(TensorKit.tsvd), t::AbstractTensorMap;kwargs...)
     T = eltype(t);
@@ -99,7 +109,7 @@ function ChainRulesCore.rrule(::typeof(TensorKit.tsvd), t::AbstractTensorMap;kwa
             else
                 d = src[j,j]^2-src[i,i]^2
             end
-            
+
             dst[i,j] = (i == j) ? zero(eltype(S)) : 1/d
         end
     end

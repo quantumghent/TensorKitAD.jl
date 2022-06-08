@@ -55,27 +55,38 @@ function ChainRulesCore.rrule(::typeof(MPSKit.InfiniteMPS),A::AbstractVector;kwa
         lambdas_R = PeriodicArray(lambdas_R.^-1);
         lambdas_L = PeriodicArray(lambdas_L.^-1);
 
-        VLs = leftnull.(AL);
-        VRs = rightnull.(MPSKit._transpose_tail.(AR));
+        #VLs = leftnull.(AL);
+        #VRs = rightnull.(MPSKit._transpose_tail.(AR));
 
-        BL = adjoint.(VLs).*AL_bar.*adjoint.(inv.(C));
-        BR = adjoint.(inv.(circshift(C,1))).*MPSKit._transpose_tail.(AR_bar).*adjoint.(VRs);
+        inv_C = inv.(C)#.*inv.(CL);
+
+        BL = AL_bar.*adjoint.(inv_C);
+        BR = adjoint.(circshift(inv_C,1)).*MPSKit._transpose_tail.(AR_bar);
+
+        BL_proj = adjoint.(AL).*BL;
+        BR_proj = BR.*adjoint.(MPSKit._transpose_tail.(AR));
+
+        BL_rest = BL-AL.*BL_proj;
+        BR_rest = BR-BR_proj.*MPSKit._transpose_tail.(AR);
+
+        #BL = adjoint.(VLs).*AL_bar.*adjoint.(inv_C);
+        #BR = adjoint.(circshift(inv_C,1)).*MPSKit._transpose_tail.(AR_bar).*adjoint.(VRs);
 
         # first two contributions to Ā
-        Ā = map(zip(lambdas_L,circshift(CL,1),VLs,BL.*adjoint.(CR))) do (l,cl,vl,b)
-            @plansor temp[-1 -2;-3] := conj((l*cl)[1;-1])*vl[1 -2;2]*b[2;-3]
+        Ā = map(zip(lambdas_L,circshift(CL,1),BL_rest.*adjoint.(CR))) do (l,cl,b)
+            @plansor temp[-1 -2;-3] := conj((l*cl)[1;-1])*b[1 -2;-3]
+        end
+        
+        Ā += map(zip(lambdas_R,CR,adjoint.(circshift(CL,1)).*BR_rest)) do (l,cr,b)
+            @plansor temp[-1 -2;-3] := (l'*b)[-1;2 -2]*conj(cr[-3;2])
         end
 
-        Ā += map(zip(lambdas_R,CR,VRs,adjoint.(circshift(CL,1)).*BR)) do (l,cr,vr,b)
-            @plansor temp[-1 -2;-3] := (l'*b)[-1;1]*vr[1;2 -2]*conj(cr[-3;2])
-        end
-
-        CL_bar = C_bar + circshift(map(zip(AR,VLs,BL)) do (a,v,b)
-            TransferMatrix(v,a)*b
+        CL_bar = C_bar + circshift(map(zip(AL,AR,BL_proj,BL)) do (al,ar,b_proj,b)
+            MPSKit._transpose_tail(b)*adjoint(MPSKit._transpose_tail(ar))-TransferMatrix(al,ar)*b_proj
         end,-1)
 
-        CR_bar = C_bar + map(zip(AL,VRs,BR)) do (a,v,b)
-            b*TransferMatrix(MPSKit._transpose_front(v),a)
+        CR_bar = C_bar + map(zip(AL,AR,BR_proj,BR)) do (al,ar,b_proj,b)
+            al'*MPSKit._transpose_front(b)-b_proj*TransferMatrix(ar,al)
         end
 
         # solve for left bit

@@ -142,3 +142,11 @@ function ChainRulesCore.rrule(::Type{MPSKit.InfiniteMPS}, A::AbstractVector; kwa
     end
     return ts, infmps_pullback
 end
+
+# honestly don't know what backwards should return. 
+function ChainRulesCore.rrule(::Type{PeriodicArray{T,N}},d::Array{T,N}) where {T,N}
+    function backwards(v)
+        (NoTangent(),v)
+    end
+    PeriodicArray(d),backwards
+end

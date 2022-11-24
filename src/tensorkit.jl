@@ -4,6 +4,21 @@
 @non_differentiable TensorKit.isomorphism(args...)
 @non_differentiable TensorKit.isometry(args...)
 
+function ChainRulesCore.rrule(::typeof(tr), A::AbstractTensorMap)
+    function tr_pushback(f̄wd)
+        ∂A = @thunk(f̄wd * id(domain(A)))
+        return NoTangent(), ∂A
+    end 
+    return tr(A), tr_pushback
+end
+
+function ChainRulesCore.rrule(::typeof(adjoint), A::AbstractTensorMap)
+    function adjoint_pushback(f̄wd)
+        return NoTangent(), f̄wd'
+    end
+    return A', adjoint_pushback
+end
+
 function ChainRulesCore.rrule(::typeof(dot),a::AbstractTensorMap,b::AbstractTensorMap)
      function pullback(c)
         ∂a = @thunk(b * c')
